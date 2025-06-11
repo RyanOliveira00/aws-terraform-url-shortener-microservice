@@ -79,7 +79,13 @@ jobs:
       - name: 📋 Terraform Plan (Dry Run)
         run: |
           cd iac
-          terraform plan -out=tfplan || echo "Plan failed - may need AWS credentials for full validation"
+          echo "🔍 Executando terraform plan (dry run)..."
+          if terraform plan -out=tfplan; then
+            echo "✅ Terraform plan executado com sucesso"
+          else
+            echo "⚠️ Terraform plan falhou - esperado sem credenciais AWS"
+            echo "✅ Validação de sintaxe já foi feita no step anterior"
+          fi
 
   # Job 2: Build e Push para ECR
   build-and-push:
@@ -120,9 +126,23 @@ jobs:
           cd iac
           terraform init
           
-          # Obter URLs dos repositórios ECR
-          API_ECR_URI=$(terraform output -raw api_service_ecr_repository_url)
-          PROCESSING_ECR_URI=$(terraform output -raw processing_service_ecr_repository_url)
+          # Verificar se os outputs existem
+          echo "🔍 Verificando outputs do Terraform..."
+          if terraform output > /dev/null 2>&1; then
+            echo "✅ Outputs encontrados, obtendo URLs dos repositórios ECR..."
+            API_ECR_URI=$(terraform output -raw api_service_ecr_repository_url)
+            PROCESSING_ECR_URI=$(terraform output -raw processing_service_ecr_repository_url)
+          else
+            echo "⚠️ Nenhum output encontrado. Usando nomes padrão dos repositórios..."
+            # Construir URLs baseado no padrão AWS ECR
+            AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+            AWS_REGION="${{ env.AWS_REGION }}"
+            API_ECR_URI="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${{ env.PROJECT_NAME }}-${{ env.ENVIRONMENT }}-api-service"
+            PROCESSING_ECR_URI="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${{ env.PROJECT_NAME }}-${{ env.ENVIRONMENT }}-processing-service"
+          fi
+          
+          echo "📋 API ECR URI: ${API_ECR_URI}"
+          echo "📋 Processing ECR URI: ${PROCESSING_ECR_URI}"
           
           echo "api-ecr-uri=${API_ECR_URI}" >> $GITHUB_OUTPUT
           echo "processing-ecr-uri=${PROCESSING_ECR_URI}" >> $GITHUB_OUTPUT
@@ -201,7 +221,17 @@ jobs:
           cd iac
           terraform init
           
-          ECS_CLUSTER=$(terraform output -raw ecs_cluster_name)
+          # Verificar se os outputs existem
+          echo "🔍 Verificando outputs do Terraform..."
+          if terraform output > /dev/null 2>&1; then
+            echo "✅ Outputs encontrados, obtendo nome do cluster ECS..."
+            ECS_CLUSTER=$(terraform output -raw ecs_cluster_name)
+          else
+            echo "⚠️ Nenhum output encontrado. Usando nome padrão do cluster..."
+            ECS_CLUSTER="${{ env.PROJECT_NAME }}-${{ env.ENVIRONMENT }}-cluster"
+          fi
+          
+          echo "📋 ECS Cluster: ${ECS_CLUSTER}"
           echo "cluster-name=${ECS_CLUSTER}" >> $GITHUB_OUTPUT
 
       - name: 🔄 Update API Service
@@ -276,7 +306,28 @@ jobs:
           cd iac
           terraform init
           
-          API_ENDPOINT=$(terraform output -raw api_endpoint)
+          # Verificar se os outputs existem
+          echo "🔍 Verificando outputs do Terraform..."
+          if terraform output > /dev/null 2>&1; then
+            echo "✅ Outputs encontrados, obtendo endpoint da API..."
+            API_ENDPOINT=$(terraform output -raw api_endpoint)
+          else
+            echo "⚠️ Nenhum output encontrado. Tentando descobrir endpoint via AWS..."
+            # Tentar obter o endpoint do Load Balancer
+            LB_DNS=$(aws elbv2 describe-load-balancers \
+              --names "${{ env.PROJECT_NAME }}-${{ env.ENVIRONMENT }}-alb" \
+              --query 'LoadBalancers[0].DNSName' \
+              --output text 2>/dev/null || echo "")
+            
+            if [ -n "$LB_DNS" ] && [ "$LB_DNS" != "None" ]; then
+              API_ENDPOINT="http://${LB_DNS}"
+            else
+              echo "❌ Não foi possível encontrar o endpoint da API"
+              exit 1
+            fi
+          fi
+          
+          echo "📋 API Endpoint: ${API_ENDPOINT}"
           echo "endpoint=${API_ENDPOINT}" >> $GITHUB_OUTPUT
 
       - name: 🏥 Health Check Test
