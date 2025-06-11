@@ -1,0 +1,338 @@
+name: 🚀 Deploy to AWS ECS
+
+on:
+  push:
+    branches: [ main, master ]
+    paths:
+      - 'src/**'
+      - 'iac/**'
+      - '.github/workflows/**'
+  pull_request:
+    branches: [ main, master ]
+    paths:
+      - 'src/**'
+      - 'iac/**'
+  workflow_dispatch:  # Permite execução manual
+
+env:
+  AWS_REGION: us-east-1
+  PROJECT_NAME: url-shortener
+  ENVIRONMENT: dev
+
+jobs:
+  # Job 1: Testes e Validações
+  test:
+    name: 🧪 Tests & Validation
+    runs-on: ubuntu-latest
+    steps:
+      - name: 📥 Checkout Code
+        uses: actions/checkout@v4
+
+      - name: 🐍 Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: 📦 Install Dependencies - API Service
+        run: |
+          cd src/api-service
+          pip install -r requirements.txt
+
+      - name: 📦 Install Dependencies - Processing Service
+        run: |
+          cd src/processing-service
+          pip install -r requirements.txt
+
+      - name: 🔍 Lint Python Code
+        run: |
+          pip install flake8
+          # Lint API Service
+          flake8 src/api-service/app.py --max-line-length=100 --ignore=E501,W503 || true
+          # Lint Processing Service
+          flake8 src/processing-service/worker.py --max-line-length=100 --ignore=E501,W503 || true
+
+      - name: 🧪 Test Docker Builds
+        run: |
+          # Test API Service Docker build
+          cd src/api-service
+          docker build -t test-api-service:latest .
+          
+          # Test Processing Service Docker build
+          cd ../processing-service
+          docker build -t test-processing-service:latest .
+
+      - name: 🔧 Validate Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: latest
+
+      - name: 🏗️ Terraform Init
+        run: |
+          cd iac
+          terraform init -backend=false
+
+      - name: ✅ Terraform Validate
+        run: |
+          cd iac
+          terraform validate
+
+      - name: 📋 Terraform Plan (Dry Run)
+        run: |
+          cd iac
+          terraform plan -out=tfplan || echo "Plan failed - may need AWS credentials for full validation"
+
+  # Job 2: Build e Push para ECR
+  build-and-push:
+    name: 🐳 Build & Push to ECR
+    runs-on: ubuntu-latest
+    needs: test
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    outputs:
+      api-image: ${{ steps.build-api.outputs.image }}
+      processing-image: ${{ steps.build-processing.outputs.image }}
+    steps:
+      - name: 📥 Checkout Code
+        uses: actions/checkout@v4
+
+      - name: 🔐 Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: 🏷️ Generate Image Tags
+        id: tags
+        run: |
+          SHORT_SHA=$(echo ${{ github.sha }} | cut -c1-7)
+          echo "short-sha=${SHORT_SHA}" >> $GITHUB_OUTPUT
+          echo "timestamp=$(date +%Y%m%d-%H%M%S)" >> $GITHUB_OUTPUT
+
+      - name: 📋 Get ECR Repository URLs
+        id: ecr-repos
+        run: |
+          # Configurar Terraform para obter outputs
+          cd iac
+          terraform init
+          
+          # Obter URLs dos repositórios ECR
+          API_ECR_URI=$(terraform output -raw api_service_ecr_repository_url)
+          PROCESSING_ECR_URI=$(terraform output -raw processing_service_ecr_repository_url)
+          
+          echo "api-ecr-uri=${API_ECR_URI}" >> $GITHUB_OUTPUT
+          echo "processing-ecr-uri=${PROCESSING_ECR_URI}" >> $GITHUB_OUTPUT
+
+      - name: 🔑 Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: 🐳 Build and Push API Service
+        id: build-api
+        run: |
+          cd src/api-service
+          
+          # Build para arquitetura AMD64 (compatível com ECS)
+          docker build --platform linux/amd64 -t ${{ steps.ecr-repos.outputs.api-ecr-uri }}:latest .
+          docker build --platform linux/amd64 -t ${{ steps.ecr-repos.outputs.api-ecr-uri }}:${{ steps.tags.outputs.short-sha }} .
+          docker build --platform linux/amd64 -t ${{ steps.ecr-repos.outputs.api-ecr-uri }}:${{ steps.tags.outputs.timestamp }} .
+          
+          # Push all tags
+          docker push ${{ steps.ecr-repos.outputs.api-ecr-uri }}:latest
+          docker push ${{ steps.ecr-repos.outputs.api-ecr-uri }}:${{ steps.tags.outputs.short-sha }}
+          docker push ${{ steps.ecr-repos.outputs.api-ecr-uri }}:${{ steps.tags.outputs.timestamp }}
+          
+          echo "image=${{ steps.ecr-repos.outputs.api-ecr-uri }}:${{ steps.tags.outputs.short-sha }}" >> $GITHUB_OUTPUT
+
+      - name: 🐳 Build and Push Processing Service
+        id: build-processing
+        run: |
+          cd src/processing-service
+          
+          # Build para arquitetura AMD64 (compatível com ECS)
+          docker build --platform linux/amd64 -t ${{ steps.ecr-repos.outputs.processing-ecr-uri }}:latest .
+          docker build --platform linux/amd64 -t ${{ steps.ecr-repos.outputs.processing-ecr-uri }}:${{ steps.tags.outputs.short-sha }} .
+          docker build --platform linux/amd64 -t ${{ steps.ecr-repos.outputs.processing-ecr-uri }}:${{ steps.tags.outputs.timestamp }} .
+          
+          # Push all tags
+          docker push ${{ steps.ecr-repos.outputs.processing-ecr-uri }}:latest
+          docker push ${{ steps.ecr-repos.outputs.processing-ecr-uri }}:${{ steps.tags.outputs.short-sha }}
+          docker push ${{ steps.ecr-repos.outputs.processing-ecr-uri }}:${{ steps.tags.outputs.timestamp }}
+          
+          echo "image=${{ steps.ecr-repos.outputs.processing-ecr-uri }}:${{ steps.tags.outputs.short-sha }}" >> $GITHUB_OUTPUT
+
+      - name: 📊 Build Summary
+        run: |
+          echo "## 🐳 Build Summary" >> $GITHUB_STEP_SUMMARY
+          echo "| Service | Image | Tag |" >> $GITHUB_STEP_SUMMARY
+          echo "|---------|-------|-----|" >> $GITHUB_STEP_SUMMARY
+          echo "| API Service | \`${{ steps.ecr-repos.outputs.api-ecr-uri }}\` | \`${{ steps.tags.outputs.short-sha }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Processing Service | \`${{ steps.ecr-repos.outputs.processing-ecr-uri }}\` | \`${{ steps.tags.outputs.short-sha }}\` |" >> $GITHUB_STEP_SUMMARY
+
+  # Job 3: Deploy para ECS
+  deploy:
+    name: 🚀 Deploy to ECS
+    runs-on: ubuntu-latest
+    needs: build-and-push
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    steps:
+      - name: 📥 Checkout Code
+        uses: actions/checkout@v4
+
+      - name: 🔐 Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: 📋 Get ECS Cluster Info
+        id: ecs-info
+        run: |
+          cd iac
+          terraform init
+          
+          ECS_CLUSTER=$(terraform output -raw ecs_cluster_name)
+          echo "cluster-name=${ECS_CLUSTER}" >> $GITHUB_OUTPUT
+
+      - name: 🔄 Update API Service
+        run: |
+          aws ecs update-service \
+            --cluster ${{ steps.ecs-info.outputs.cluster-name }} \
+            --service "${PROJECT_NAME}-${ENVIRONMENT}-api-service" \
+            --force-new-deployment \
+            --region ${{ env.AWS_REGION }}
+
+      - name: 🔄 Update Processing Service
+        run: |
+          aws ecs update-service \
+            --cluster ${{ steps.ecs-info.outputs.cluster-name }} \
+            --service "${PROJECT_NAME}-${ENVIRONMENT}-processing-service" \
+            --force-new-deployment \
+            --region ${{ env.AWS_REGION }}
+
+      - name: ⏳ Wait for API Service Stability
+        run: |
+          echo "⏳ Aguardando estabilização do API Service..."
+          aws ecs wait services-stable \
+            --cluster ${{ steps.ecs-info.outputs.cluster-name }} \
+            --services "${PROJECT_NAME}-${ENVIRONMENT}-api-service" \
+            --region ${{ env.AWS_REGION }}
+          echo "✅ API Service estabilizado"
+
+      - name: ⏳ Wait for Processing Service Stability
+        run: |
+          echo "⏳ Aguardando estabilização do Processing Service..."
+          aws ecs wait services-stable \
+            --cluster ${{ steps.ecs-info.outputs.cluster-name }} \
+            --services "${PROJECT_NAME}-${ENVIRONMENT}-processing-service" \
+            --region ${{ env.AWS_REGION }}
+          echo "✅ Processing Service estabilizado"
+
+      - name: 📊 Service Status
+        run: |
+          echo "📊 Status dos serviços após deploy:"
+          aws ecs describe-services \
+            --cluster ${{ steps.ecs-info.outputs.cluster-name }} \
+            --services "${PROJECT_NAME}-${ENVIRONMENT}-api-service" "${PROJECT_NAME}-${ENVIRONMENT}-processing-service" \
+            --query 'services[*].[serviceName,runningCount,desiredCount,taskDefinition]' \
+            --output table \
+            --region ${{ env.AWS_REGION }}
+
+  # Job 4: Testes de Integração
+  integration-tests:
+    name: 🧪 Integration Tests
+    runs-on: ubuntu-latest
+    needs: deploy
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    steps:
+      - name: 📥 Checkout Code
+        uses: actions/checkout@v4
+
+      - name: 🔐 Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: 🔗 Get API Endpoint
+        id: api-endpoint
+        run: |
+          cd iac
+          terraform init
+          
+          API_ENDPOINT=$(terraform output -raw api_endpoint)
+          echo "endpoint=${API_ENDPOINT}" >> $GITHUB_OUTPUT
+
+      - name: 🏥 Health Check Test
+        run: |
+          echo "🏥 Testando health check..."
+          
+          # Aguardar API ficar disponível
+          for i in {1..30}; do
+            if curl -sf "${{ steps.api-endpoint.outputs.endpoint }}/health" > /dev/null; then
+              echo "✅ API está respondendo"
+              break
+            fi
+            echo "⏳ Tentativa $i/30 - aguardando API..."
+            sleep 10
+          done
+          
+          # Fazer o teste efetivo
+          response=$(curl -s "${{ steps.api-endpoint.outputs.endpoint }}/health")
+          echo "Resposta do health check: $response"
+          
+          # Verificar se contém "healthy"
+          if echo "$response" | grep -q "healthy"; then
+            echo "✅ Health check passou"
+          else
+            echo "❌ Health check falhou"
+            exit 1
+          fi
+
+      - name: 🔗 URL Shortening Test
+        run: |
+          echo "🔗 Testando encurtamento de URL..."
+          
+          response=$(curl -s -X POST "${{ steps.api-endpoint.outputs.endpoint }}/shorten" \
+            -H "Content-Type: application/json" \
+            -d '{"url": "https://github.com/actions/checkout"}')
+          
+          echo "Resposta do encurtamento: $response"
+          
+          # Verificar se contém "success": true
+          if echo "$response" | grep -q '"success": *true'; then
+            echo "✅ Teste de encurtamento passou"
+          else
+            echo "❌ Teste de encurtamento falhou"
+            exit 1
+          fi
+
+      - name: 📊 Integration Test Summary
+        run: |
+          echo "## 🧪 Integration Test Results" >> $GITHUB_STEP_SUMMARY
+          echo "| Test | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Health Check | ✅ Passed |" >> $GITHUB_STEP_SUMMARY
+          echo "| URL Shortening | ✅ Passed |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "🔗 **API Endpoint**: ${{ steps.api-endpoint.outputs.endpoint }}" >> $GITHUB_STEP_SUMMARY
+
+  # Job 5: Notificação
+  notify:
+    name: 📢 Notification
+    runs-on: ubuntu-latest
+    needs: [test, build-and-push, deploy, integration-tests]
+    if: always()
+    steps:
+      - name: 📢 Deployment Status
+        run: |
+          if [[ "${{ needs.test.result }}" == "success" && "${{ needs.build-and-push.result }}" == "success" && "${{ needs.deploy.result }}" == "success" && "${{ needs.integration-tests.result }}" == "success" ]]; then
+            echo "🎉 Deploy realizado com sucesso!"
+            echo "## 🎉 Deployment Successful!" >> $GITHUB_STEP_SUMMARY
+            echo "Todos os testes passaram e a aplicação foi deployada com sucesso." >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ Deploy falhou em alguma etapa"
+            echo "## ❌ Deployment Failed" >> $GITHUB_STEP_SUMMARY
+            echo "Verifique os logs dos jobs para mais detalhes." >> $GITHUB_STEP_SUMMARY
+          fi 

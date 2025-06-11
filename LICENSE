@@ -1,0 +1,68 @@
+MIT License
+
+Copyright (c) 2025 Jose Ryan De Oliveira Coelho
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+---
+
+## Sobre este Projeto
+
+Este projeto foi desenvolvido como parte do Materia de **Sistemas Distribuídos** do 
+**Centro Universitário do Estado do Pará** em junho de 2025.
+
+### Objetivo Acadêmico
+Demonstrar conceitos avançados de computação em nuvem, incluindo:
+- Arquitetura de microsserviços
+- Infrastructure as Code (Terraform)
+- Containerização e orquestração (Docker + ECS)
+- Comunicação assíncrona (AWS SQS)
+- Pipeline CI/CD (GitHub Actions)
+- Observabilidade e monitoramento
+
+### Uso Educacional
+Este código é disponibilizado para fins educacionais e pode ser usado como:
+- Referência para projetos similares
+- Base para estudos de cloud computing
+- Exemplo de implementação de DevOps
+- Demonstração de boas práticas em desenvolvimento
+
+### Reconhecimentos
+- **AWS** - Por fornecer a plataforma de nuvem
+- **HashiCorp** - Pelo Terraform (Infrastructure as Code)
+- **Docker** - Por simplificar a containerização
+- **GitHub** - Pela plataforma de versionamento e CI/CD
+
+### Contribuições
+Para contribuições ou melhorias neste projeto educacional:
+1. Faça um fork do repositório
+2. Crie uma branch para sua feature
+3. Implemente suas melhorias
+4. Abra um Pull Request
+
+### Disclaimer
+Este projeto é destinado para fins educacionais e demonstração. 
+Para uso em produção, implemente medidas adicionais de segurança,
+monitoring e conformidade conforme necessário.
+
+### Suporte
+Para dúvidas sobre este projeto acadêmico, consulte:
+- README.md - Instruções de setup e uso
+- RELATORIO.md - Análise técnica detalhada
+- CICD-SETUP.md - Configuração do pipeline CI/CD 
