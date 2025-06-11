@@ -126,14 +126,16 @@ jobs:
           cd iac
           terraform init
           
-          # Verificar se os outputs existem
+          # Verificar se os outputs existem verificando o conteúdo real
           echo "🔍 Verificando outputs do Terraform..."
-          if terraform output > /dev/null 2>&1; then
+          OUTPUT_CHECK=$(terraform output -json 2>/dev/null || echo '{}')
+          
+          if echo "$OUTPUT_CHECK" | jq -e '.api_service_ecr_repository_url.value' > /dev/null 2>&1; then
             echo "✅ Outputs encontrados, obtendo URLs dos repositórios ECR..."
-            API_ECR_URI=$(terraform output -raw api_service_ecr_repository_url)
-            PROCESSING_ECR_URI=$(terraform output -raw processing_service_ecr_repository_url)
+            API_ECR_URI=$(terraform output -raw api_service_ecr_repository_url 2>/dev/null)
+            PROCESSING_ECR_URI=$(terraform output -raw processing_service_ecr_repository_url 2>/dev/null)
           else
-            echo "⚠️ Nenhum output encontrado. Usando nomes padrão dos repositórios..."
+            echo "⚠️ Nenhum output válido encontrado. Usando nomes padrão dos repositórios..."
             # Construir URLs baseado no padrão AWS ECR
             AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
             AWS_REGION="${{ env.AWS_REGION }}"
@@ -221,13 +223,15 @@ jobs:
           cd iac
           terraform init
           
-          # Verificar se os outputs existem
+          # Verificar se os outputs existem verificando o conteúdo real
           echo "🔍 Verificando outputs do Terraform..."
-          if terraform output > /dev/null 2>&1; then
+          OUTPUT_CHECK=$(terraform output -json 2>/dev/null || echo '{}')
+          
+          if echo "$OUTPUT_CHECK" | jq -e '.ecs_cluster_name.value' > /dev/null 2>&1; then
             echo "✅ Outputs encontrados, obtendo nome do cluster ECS..."
-            ECS_CLUSTER=$(terraform output -raw ecs_cluster_name)
+            ECS_CLUSTER=$(terraform output -raw ecs_cluster_name 2>/dev/null)
           else
-            echo "⚠️ Nenhum output encontrado. Usando nome padrão do cluster..."
+            echo "⚠️ Nenhum output válido encontrado. Usando nome padrão do cluster..."
             ECS_CLUSTER="${{ env.PROJECT_NAME }}-${{ env.ENVIRONMENT }}-cluster"
           fi
           
@@ -306,13 +310,15 @@ jobs:
           cd iac
           terraform init
           
-          # Verificar se os outputs existem
+          # Verificar se os outputs existem verificando o conteúdo real
           echo "🔍 Verificando outputs do Terraform..."
-          if terraform output > /dev/null 2>&1; then
+          OUTPUT_CHECK=$(terraform output -json 2>/dev/null || echo '{}')
+          
+          if echo "$OUTPUT_CHECK" | jq -e '.api_endpoint.value' > /dev/null 2>&1; then
             echo "✅ Outputs encontrados, obtendo endpoint da API..."
-            API_ENDPOINT=$(terraform output -raw api_endpoint)
+            API_ENDPOINT=$(terraform output -raw api_endpoint 2>/dev/null)
           else
-            echo "⚠️ Nenhum output encontrado. Tentando descobrir endpoint via AWS..."
+            echo "⚠️ Nenhum output válido encontrado. Tentando descobrir endpoint via AWS..."
             # Tentar obter o endpoint do Load Balancer
             LB_DNS=$(aws elbv2 describe-load-balancers \
               --names "${{ env.PROJECT_NAME }}-${{ env.ENVIRONMENT }}-alb" \
