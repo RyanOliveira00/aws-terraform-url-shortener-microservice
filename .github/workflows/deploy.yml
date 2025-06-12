@@ -136,11 +136,11 @@ jobs:
             PROCESSING_ECR_URI=$(terraform output -raw processing_service_ecr_repository_url 2>/dev/null)
           else
             echo "⚠️ Nenhum output válido encontrado. Usando nomes padrão dos repositórios..."
-            # Construir URLs baseado no padrão AWS ECR
+            # Construir URLs baseado no padrão AWS ECR (baseado na estrutura real)
             AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
             AWS_REGION="${{ env.AWS_REGION }}"
-            API_ECR_URI="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${{ env.PROJECT_NAME }}-${{ env.ENVIRONMENT }}-api-service"
-            PROCESSING_ECR_URI="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${{ env.PROJECT_NAME }}-${{ env.ENVIRONMENT }}-processing-service"
+            API_ECR_URI="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${{ env.PROJECT_NAME }}/${{ env.ENVIRONMENT }}/api-service"
+            PROCESSING_ECR_URI="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${{ env.PROJECT_NAME }}/${{ env.ENVIRONMENT }}/processing-service"
           fi
           
           echo "📋 API ECR URI: ${API_ECR_URI}"
