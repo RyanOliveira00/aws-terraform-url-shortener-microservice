@@ -2,11 +2,11 @@
 
 ## 📋 Informações do Projeto
 
-**Título:** Sistema de Microsserviços para Encurtamento de URLs na AWS  
+**Título:** Sistema de Microsserviços para Encurtamento de URLs na AWS 
 **Disciplina:** Sistemas distribuidos
 **Curso**Ciência da Computação
 **Faculdade** Centro Universitario do Estado do Pará  
-**Data:** Junho 2024  
+**Data:** Junho 2025
 **Versão:** 1.0  
 
 ---
